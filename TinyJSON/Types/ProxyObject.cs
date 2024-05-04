@@ -40,6 +40,11 @@ namespace TinyJSON
 			return dict.TryGetValue( key, out item );
 		}
 
+		public bool ContainsKey( string key )
+		{
+            return dict.ContainsKey( key );
+		}
+
 
 		public string TypeHint
 		{

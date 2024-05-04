@@ -15,6 +15,11 @@ namespace TinyJSON
 			JSON.MakeInto( this, out item );
 		}
 
+		public void Populate<T>( ref T item )
+		{
+			JSON.PopulateInto( this, ref item );
+		}
+
 
 		public T Make<T>()
 		{

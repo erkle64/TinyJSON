@@ -178,17 +178,19 @@ namespace TinyJSON
 		{
 			if (EnforceHierarchyOrderEnabled)
 			{
-				var types = new Stack<Type>();
+				var types = new List<Type>();
 				while (type != null)
 				{
-					types.Push( type );
+					types.Add( type );
 					type = type.BaseType;
 				}
 
 				var fields = new List<FieldInfo>();
 				while (types.Count > 0)
 				{
-					fields.AddRange( types.Pop().GetFields( BindingFlags.DeclaredOnly | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance ) );
+					var fieldType = types[types.Count - 1];
+					types.RemoveAt( types.Count - 1 );
+					fields.AddRange( fieldType.GetFields( BindingFlags.DeclaredOnly | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance ) );
 				}
 
 				return fields;
@@ -202,17 +204,19 @@ namespace TinyJSON
 		{
 			if (EnforceHierarchyOrderEnabled)
 			{
-				var types = new Stack<Type>();
+				var types = new List<Type>();
 				while (type != null)
 				{
-					types.Push( type );
+					types.Add( type );
 					type = type.BaseType;
 				}
 
 				var properties = new List<PropertyInfo>();
 				while (types.Count > 0)
 				{
-					properties.AddRange( types.Pop().GetProperties( BindingFlags.DeclaredOnly | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance ) );
+                    var fieldType = types[types.Count - 1];
+                    types.RemoveAt(types.Count - 1);
+                    properties.AddRange(fieldType.GetProperties( BindingFlags.DeclaredOnly | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance ) );
 				}
 
 				return properties;
@@ -506,7 +510,7 @@ namespace TinyJSON
 						}
 						else
 						{
-							builder.Append( "\\u" + Convert.ToString( codepoint, 16 ).PadLeft( 4, '0' ) );
+							builder.Append( "\\u" + string.Format("{0:X}", codepoint).PadLeft( 4, '0' ) );
 						}
 
 						break;

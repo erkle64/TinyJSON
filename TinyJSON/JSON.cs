@@ -151,6 +151,11 @@ namespace TinyJSON
 			item = DecodeType<T>( data );
 		}
 
+		public static void PopulateInto<T>( Variant data, ref T item )
+		{
+			PopulateType(ref item, data);
+		}
+
 
 		static readonly Dictionary<string, Type> typeCache = new Dictionary<string, Type>();
 
@@ -408,6 +413,213 @@ namespace TinyJSON
 			}
 
 			return instance;
+		}
+
+
+#if ENABLE_IL2CPP
+		[Preserve]
+#endif
+		static void PopulateType<T>(ref T objectToPopulate, Variant data )
+		{
+			if (data == null)
+			{
+				return;
+			}
+
+			var type = typeof(T);
+
+			if (type.IsEnum)
+			{
+                objectToPopulate = (T)Enum.Parse( type, data.ToString( CultureInfo.InvariantCulture ) );
+				return;
+			}
+
+			if (type.IsPrimitive || type == typeof(string) || type == typeof(decimal))
+			{
+                objectToPopulate = (T)Convert.ChangeType( data, type );
+				return;
+			}
+
+			if (type == typeof(Guid))
+			{
+                objectToPopulate = (T)(object)new Guid( data.ToString( CultureInfo.InvariantCulture ) );
+				return;
+			}
+
+			if (type.IsArray)
+			{
+				if (type.GetArrayRank() == 1)
+				{
+					var makeFunc = decodeArrayMethod.MakeGenericMethod( type.GetElementType() );
+                    objectToPopulate = (T) makeFunc.Invoke( null, new object[] { data } );
+					return;
+				}
+
+				var arrayData = data as ProxyArray;
+				if (arrayData == null)
+				{
+					throw new DecodeException( "Variant is expected to be a ProxyArray here, but it is not." );
+				}
+
+				var arrayRank = type.GetArrayRank();
+				var rankLengths = new int[arrayRank];
+				if (arrayData.CanBeMultiRankArray( rankLengths ))
+				{
+					var elementType = type.GetElementType();
+					if (elementType == null)
+					{
+						throw new DecodeException( "Array element type is expected to be not null, but it is." );
+					}
+
+					var array = Array.CreateInstance( elementType, rankLengths );
+					var makeFunc = decodeMultiRankArrayMethod.MakeGenericMethod( elementType );
+					try
+					{
+						makeFunc.Invoke( null, new object[] { arrayData, array, 1, rankLengths } );
+					}
+					catch (Exception e)
+					{
+						throw new DecodeException( "Error decoding multidimensional array. Did you try to decode into an array of incompatible rank or element type?", e );
+					}
+
+                    objectToPopulate = (T) Convert.ChangeType( array, typeof(T) );
+					return;
+				}
+
+				throw new DecodeException( "Error decoding multidimensional array; JSON data doesn't seem fit this structure." );
+			}
+
+			if (typeof(IList).IsAssignableFrom( type ))
+			{
+				var makeFunc = decodeListMethod.MakeGenericMethod( type.GetGenericArguments() );
+                objectToPopulate = (T) makeFunc.Invoke( null, new object[] { data } );
+                return;
+			}
+
+			if (typeof(IDictionary).IsAssignableFrom( type ))
+			{
+				var makeFunc = decodeDictionaryMethod.MakeGenericMethod( type.GetGenericArguments() );
+                objectToPopulate = (T) makeFunc.Invoke( null, new object[] { data } );
+				return;
+			}
+
+			// At this point we should be dealing with a class or struct.
+			var proxyObject = data as ProxyObject;
+			if (proxyObject == null)
+			{
+				throw new InvalidCastException( "ProxyObject expected when decoding into '" + type.FullName + "'." );
+			}
+
+			// Now decode fields and properties.
+			foreach (var pair in (ProxyObject) data)
+			{
+				var field = type.GetField( pair.Key, instanceBindingFlags );
+
+				// If the field doesn't exist, search through any [DecodeAlias] attributes.
+				if (field == null)
+				{
+					var fields = type.GetFields( instanceBindingFlags );
+					foreach (var fieldInfo in fields)
+					{
+						foreach (var attribute in fieldInfo.GetCustomAttributes( true ))
+						{
+							if (decodeAliasAttrType.IsInstanceOfType( attribute ))
+							{
+								if (((DecodeAlias) attribute).Contains( pair.Key ))
+								{
+									field = fieldInfo;
+									break;
+								}
+							}
+						}
+					}
+				}
+
+				if (field != null)
+				{
+					var shouldDecode = field.IsPublic;
+					foreach (var attribute in field.GetCustomAttributes( true ))
+					{
+						if (excludeAttrType.IsInstanceOfType( attribute ))
+						{
+							shouldDecode = false;
+						}
+
+						if (includeAttrType.IsInstanceOfType( attribute ))
+						{
+							shouldDecode = true;
+						}
+					}
+
+					if (shouldDecode)
+					{
+						var makeFunc = decodeTypeMethod.MakeGenericMethod( field.FieldType );
+						if (type.IsValueType)
+						{
+							// Type is a struct.
+							var instanceRef = (object) objectToPopulate;
+							field.SetValue( instanceRef, makeFunc.Invoke( null, new object[] { pair.Value } ) );
+                            objectToPopulate = (T) instanceRef;
+						}
+						else
+						{
+							// Type is a class.
+							field.SetValue(objectToPopulate, makeFunc.Invoke( null, new object[] { pair.Value } ) );
+						}
+					}
+				}
+
+				var property = type.GetProperty( pair.Key, instanceBindingFlags );
+
+				// If the property doesn't exist, search through any [DecodeAlias] attributes.
+				if (property == null)
+				{
+					var properties = type.GetProperties( instanceBindingFlags );
+					foreach (var propertyInfo in properties)
+					{
+						foreach (var attribute in propertyInfo.GetCustomAttributes( false ))
+						{
+							if (decodeAliasAttrType.IsInstanceOfType( attribute ))
+							{
+								if (((DecodeAlias) attribute).Contains( pair.Key ))
+								{
+									property = propertyInfo;
+									break;
+								}
+							}
+						}
+					}
+				}
+
+				if (property != null)
+				{
+					if (property.CanWrite && property.GetCustomAttributes( false ).AnyOfType( includeAttrType ))
+					{
+						var makeFunc = decodeTypeMethod.MakeGenericMethod( new Type[] { property.PropertyType } );
+						if (type.IsValueType)
+						{
+							// Type is a struct.
+							var instanceRef = (object)objectToPopulate;
+							property.SetValue( instanceRef, makeFunc.Invoke( null, new object[] { pair.Value } ), null );
+                            objectToPopulate = (T) instanceRef;
+						}
+						else
+						{
+							// Type is a class.
+							property.SetValue(objectToPopulate, makeFunc.Invoke( null, new object[] { pair.Value } ), null );
+						}
+					}
+				}
+			}
+
+			// Invoke methods tagged with [AfterDecode] attribute.
+			foreach (var method in type.GetMethods( instanceBindingFlags ))
+			{
+				if (method.GetCustomAttributes( false ).AnyOfType( typeof(AfterDecode) ))
+				{
+					method.Invoke(objectToPopulate, method.GetParameters().Length == 0 ? null : new object[] { data } );
+				}
+			}
 		}
 
 
