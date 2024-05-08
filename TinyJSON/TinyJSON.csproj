@@ -22,6 +22,7 @@
     <WarningLevel>4</WarningLevel>
     <ConsolePause>false</ConsolePause>
     <Prefer32Bit>false</Prefer32Bit>
+    <LangVersion>7.0</LangVersion>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <Optimize>true</Optimize>
@@ -30,10 +31,14 @@
     <WarningLevel>4</WarningLevel>
     <ConsolePause>false</ConsolePause>
     <Prefer32Bit>false</Prefer32Bit>
+    <LangVersion>7.0</LangVersion>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="System">
       <HintPath>G:\SteamLibrary\steamapps\common\FOUNDRY\foundry_Data\Managed\System.dll</HintPath>
+    </Reference>
+    <Reference Include="mscorlib">
+      <HintPath>G:\SteamLibrary\steamapps\common\FOUNDRY\foundry_Data\Managed\mscorlib.dll</HintPath>
     </Reference>
   </ItemGroup>
   <ItemGroup>
@@ -50,6 +55,11 @@
     <Compile Include="JSON.cs" />
     <Compile Include="EncodeOptions.cs" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\expressive\Source\Expressive\Expressive.csproj">
+      <Project>{db556040-95a0-42e1-815c-81752a81f52c}</Project>
+      <Name>Expressive</Name>
+    </ProjectReference>
+  </ItemGroup>
   <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.targets" />
-  <ItemGroup />
 </Project>

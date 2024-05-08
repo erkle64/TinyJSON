@@ -1,8 +1,10 @@
+using Expressive;
 using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Reflection;
+using static TinyJSON.JSON;
 
 
 #if ENABLE_IL2CPP
@@ -151,9 +153,9 @@ namespace TinyJSON
 			item = DecodeType<T>( data );
 		}
 
-		public static void PopulateInto<T>( Variant data, ref T item )
+		public static void PopulateInto<T>( Variant data, ref T item, Dictionary<Type, PopulateOverride> overrides)
 		{
-			PopulateType(ref item, data);
+			PopulateType(ref item, data, overrides);
 		}
 
 
@@ -166,13 +168,12 @@ namespace TinyJSON
 				return null;
 			}
 
-			Type type;
-			if (typeCache.TryGetValue( fullName, out type ))
-			{
-				return type;
-			}
+            if (typeCache.TryGetValue(fullName, out Type type))
+            {
+                return type;
+            }
 
-			foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
 			{
 				type = assembly.GetType( fullName );
 				if (type != null)
@@ -221,13 +222,12 @@ namespace TinyJSON
 					return (T) makeFunc.Invoke( null, new object[] { data } );
 				}
 
-				var arrayData = data as ProxyArray;
-				if (arrayData == null)
-				{
-					throw new DecodeException( "Variant is expected to be a ProxyArray here, but it is not." );
-				}
+                if (!(data is ProxyArray arrayData))
+                {
+                    throw new DecodeException("Variant is expected to be a ProxyArray here, but it is not.");
+                }
 
-				var arrayRank = type.GetArrayRank();
+                var arrayRank = type.GetArrayRank();
 				var rankLengths = new int[arrayRank];
 				if (arrayData.CanBeMultiRankArray( rankLengths ))
 				{
@@ -268,14 +268,13 @@ namespace TinyJSON
 
 			// At this point we should be dealing with a class or struct.
 			T instance;
-			var proxyObject = data as ProxyObject;
-			if (proxyObject == null)
-			{
-				throw new InvalidCastException( "ProxyObject expected when decoding into '" + type.FullName + "'." );
-			}
+            if (!(data is ProxyObject proxyObject))
+            {
+                throw new InvalidCastException("ProxyObject expected when decoding into '" + type.FullName + "'.");
+            }
 
-			// If there's a type hint, use it to create the instance.
-			var typeHint = proxyObject.TypeHint;
+            // If there's a type hint, use it to create the instance.
+            var typeHint = proxyObject.TypeHint;
 			if (typeHint != null && typeHint != type.FullName)
 			{
 				var makeType = FindType( typeHint );
@@ -415,11 +414,12 @@ namespace TinyJSON
 			return instance;
 		}
 
+        public delegate object PopulateOverride(Variant input);
 
 #if ENABLE_IL2CPP
 		[Preserve]
 #endif
-		static void PopulateType<T>(ref T objectToPopulate, Variant data )
+        static void PopulateType<T>(ref T objectToPopulate, Variant data, Dictionary<Type, PopulateOverride> overrides)
 		{
 			if (data == null)
 			{
@@ -427,6 +427,12 @@ namespace TinyJSON
 			}
 
 			var type = typeof(T);
+
+			if (overrides.TryGetValue(type, out var overrideFunc))
+            {
+                objectToPopulate = (T)overrideFunc(data);
+                return;
+            }
 
 			if (type.IsEnum)
 			{
@@ -436,7 +442,27 @@ namespace TinyJSON
 
 			if (type.IsPrimitive || type == typeof(string) || type == typeof(decimal))
 			{
-                objectToPopulate = (T)Convert.ChangeType( data, type );
+				if (data is ProxyString proxyString)
+				{
+					var dataString = proxyString.ToString();
+					if (dataString.StartsWith("{") && dataString.EndsWith("}"))
+					{
+						var expression = new Expression(dataString.Substring(1, dataString.Length - 2), ExpressiveOptions.IgnoreCaseForParsing | ExpressiveOptions.NoCache);
+						var result = expression.Evaluate(new Dictionary<string, object>
+						{
+                            ["value"] = objectToPopulate
+                        });
+                        objectToPopulate = (T)Convert.ChangeType(result, type);
+                    }
+                    else
+					{
+						objectToPopulate = (T)Convert.ChangeType(data, type);
+					}
+				}
+				else
+				{
+					objectToPopulate = (T)Convert.ChangeType(data, type);
+				}
 				return;
 			}
 
@@ -450,18 +476,19 @@ namespace TinyJSON
 			{
 				if (type.GetArrayRank() == 1)
 				{
-					var makeFunc = decodeArrayMethod.MakeGenericMethod( type.GetElementType() );
-                    objectToPopulate = (T) makeFunc.Invoke( null, new object[] { data } );
+					var makeFunc = populateArrayMethod.MakeGenericMethod( type.GetElementType() );
+                    var arguments = new object[] { objectToPopulate, data, overrides };
+                    makeFunc.Invoke( null, arguments);
+                    objectToPopulate = (T)arguments[0];
 					return;
 				}
 
-				var arrayData = data as ProxyArray;
-				if (arrayData == null)
-				{
-					throw new DecodeException( "Variant is expected to be a ProxyArray here, but it is not." );
-				}
+                if (!(data is ProxyArray arrayData))
+                {
+                    throw new DecodeException("Variant is expected to be a ProxyArray here, but it is not.");
+                }
 
-				var arrayRank = type.GetArrayRank();
+                var arrayRank = type.GetArrayRank();
 				var rankLengths = new int[arrayRank];
 				if (arrayData.CanBeMultiRankArray( rankLengths ))
 				{
@@ -472,10 +499,10 @@ namespace TinyJSON
 					}
 
 					var array = Array.CreateInstance( elementType, rankLengths );
-					var makeFunc = decodeMultiRankArrayMethod.MakeGenericMethod( elementType );
+					var makeFunc = populateMultiRankArrayMethod.MakeGenericMethod( elementType );
 					try
 					{
-						makeFunc.Invoke( null, new object[] { arrayData, array, 1, rankLengths } );
+						makeFunc.Invoke( null, new object[] { arrayData, array, 1, rankLengths, overrides } );
 					}
 					catch (Exception e)
 					{
@@ -491,27 +518,30 @@ namespace TinyJSON
 
 			if (typeof(IList).IsAssignableFrom( type ))
 			{
-				var makeFunc = decodeListMethod.MakeGenericMethod( type.GetGenericArguments() );
-                objectToPopulate = (T) makeFunc.Invoke( null, new object[] { data } );
+				var makeFunc = populateListMethod.MakeGenericMethod( type.GetGenericArguments() );
+                var arguments = new object[] { objectToPopulate, data, overrides };
+                makeFunc.Invoke(null, arguments);
+                objectToPopulate = (T)arguments[0];
                 return;
 			}
 
 			if (typeof(IDictionary).IsAssignableFrom( type ))
 			{
-				var makeFunc = decodeDictionaryMethod.MakeGenericMethod( type.GetGenericArguments() );
-                objectToPopulate = (T) makeFunc.Invoke( null, new object[] { data } );
-				return;
+				var makeFunc = populateDictionaryMethod.MakeGenericMethod( type.GetGenericArguments() );
+                var arguments = new object[] { objectToPopulate, data, overrides };
+                makeFunc.Invoke(null, arguments);
+                objectToPopulate = (T)arguments[0];
+                return;
 			}
 
-			// At this point we should be dealing with a class or struct.
-			var proxyObject = data as ProxyObject;
-			if (proxyObject == null)
-			{
-				throw new InvalidCastException( "ProxyObject expected when decoding into '" + type.FullName + "'." );
-			}
+            // At this point we should be dealing with a class or struct.
+            if (!(data is ProxyObject))
+            {
+                throw new InvalidCastException("ProxyObject expected when decoding into '" + type.FullName + "'.");
+            }
 
-			// Now decode fields and properties.
-			foreach (var pair in (ProxyObject) data)
+            // Now decode fields and properties.
+            foreach (var pair in (ProxyObject) data)
 			{
 				var field = type.GetField( pair.Key, instanceBindingFlags );
 
@@ -553,20 +583,24 @@ namespace TinyJSON
 
 					if (shouldDecode)
 					{
-						var makeFunc = decodeTypeMethod.MakeGenericMethod( field.FieldType );
+						var makeFunc = populateTypeMethod.MakeGenericMethod( field.FieldType );
 						if (type.IsValueType)
 						{
 							// Type is a struct.
 							var instanceRef = (object) objectToPopulate;
-							field.SetValue( instanceRef, makeFunc.Invoke( null, new object[] { pair.Value } ) );
+                            var arguments = new object[] { field.GetValue(instanceRef), pair.Value, overrides };
+                            makeFunc.Invoke(null, arguments);
+                            field.SetValue( instanceRef, arguments[0]);
                             objectToPopulate = (T) instanceRef;
 						}
 						else
 						{
 							// Type is a class.
-							field.SetValue(objectToPopulate, makeFunc.Invoke( null, new object[] { pair.Value } ) );
-						}
-					}
+                            var arguments = new object[] { field.GetValue(objectToPopulate), pair.Value, overrides };
+                            makeFunc.Invoke(null, arguments);
+                            field.SetValue(objectToPopulate, arguments[0]);
+                        }
+                    }
 				}
 
 				var property = type.GetProperty( pair.Key, instanceBindingFlags );
@@ -600,13 +634,17 @@ namespace TinyJSON
 						{
 							// Type is a struct.
 							var instanceRef = (object)objectToPopulate;
-							property.SetValue( instanceRef, makeFunc.Invoke( null, new object[] { pair.Value } ), null );
+                            var arguments = new object[] { property.GetValue(instanceRef, null), pair.Value, overrides };
+                            makeFunc.Invoke(null, arguments);
+                            property.SetValue( instanceRef, arguments[0], null );
                             objectToPopulate = (T) instanceRef;
 						}
 						else
 						{
-							// Type is a class.
-							property.SetValue(objectToPopulate, makeFunc.Invoke( null, new object[] { pair.Value } ), null );
+                            // Type is a class.
+                            var arguments = new object[] { property.GetValue(objectToPopulate, null), pair.Value, overrides };
+                            makeFunc.Invoke(null, arguments);
+                            property.SetValue(objectToPopulate, arguments[0], null );
 						}
 					}
 				}
@@ -631,13 +669,12 @@ namespace TinyJSON
 		{
 			var list = new List<T>();
 
-			var proxyArray = data as ProxyArray;
-			if (proxyArray == null)
-			{
-				throw new DecodeException( "Variant is expected to be a ProxyArray here, but it is not." );
-			}
+            if (!(data is ProxyArray proxyArray))
+            {
+                throw new DecodeException("Variant is expected to be a ProxyArray here, but it is not.");
+            }
 
-			foreach (var item in proxyArray)
+            foreach (var item in proxyArray)
 			{
 				list.Add( DecodeType<T>( item ) );
 			}
@@ -650,18 +687,39 @@ namespace TinyJSON
 		[Preserve]
 #endif
 		// ReSharper disable once UnusedMethodReturnValue.Local
+		static void PopulateList<T>(ref List<T> list, Variant data, Dictionary<Type, PopulateOverride> overrides = null)
+		{
+			if (list == null) list = new List<T>();
+			else list.Clear();
+            if (!(data is ProxyArray proxyArray))
+            {
+                throw new DecodeException("Variant is expected to be a ProxyArray here, but it is not.");
+            }
+
+            foreach (var item in proxyArray)
+			{
+				T value = default(T);
+                PopulateType(ref value, item, overrides);
+                list.Add(value);
+			}
+		}
+
+
+#if ENABLE_IL2CPP
+		[Preserve]
+#endif
+		// ReSharper disable once UnusedMethodReturnValue.Local
 		static Dictionary<TKey, TValue> DecodeDictionary<TKey, TValue>( Variant data )
 		{
 			var dict = new Dictionary<TKey, TValue>();
 			var type = typeof(TKey);
 
-			var proxyObject = data as ProxyObject;
-			if (proxyObject == null)
-			{
-				throw new DecodeException( "Variant is expected to be a ProxyObject here, but it is not." );
-			}
+            if (!(data is ProxyObject proxyObject))
+            {
+                throw new DecodeException("Variant is expected to be a ProxyObject here, but it is not.");
+            }
 
-			foreach (var pair in proxyObject)
+            foreach (var pair in proxyObject)
 			{
 				var k = (TKey) (type.IsEnum ? Enum.Parse( type, pair.Key ) : Convert.ChangeType( pair.Key, type ));
 				var v = DecodeType<TValue>( pair.Value );
@@ -676,15 +734,39 @@ namespace TinyJSON
 		[Preserve]
 #endif
 		// ReSharper disable once UnusedMethodReturnValue.Local
+		static void PopulateDictionary<TKey, TValue>(ref Dictionary<TKey, TValue> dict, Variant data, Dictionary<Type, PopulateOverride> overrides = null)
+		{
+			if (dict == null) dict = new Dictionary<TKey, TValue>();
+			else dict.Clear();
+			var type = typeof(TKey);
+
+            if (!(data is ProxyObject proxyObject))
+            {
+                throw new DecodeException("Variant is expected to be a ProxyObject here, but it is not.");
+            }
+
+            foreach (var pair in proxyObject)
+			{
+				var k = (TKey) (type.IsEnum ? Enum.Parse( type, pair.Key ) : Convert.ChangeType( pair.Key, type ));
+				var v = default(TValue);
+                PopulateType(ref v, pair.Value, overrides );
+				dict[k] = v;
+			}
+		}
+
+
+#if ENABLE_IL2CPP
+		[Preserve]
+#endif
+		// ReSharper disable once UnusedMethodReturnValue.Local
 		static T[] DecodeArray<T>( Variant data )
 		{
-			var arrayData = data as ProxyArray;
-			if (arrayData == null)
-			{
-				throw new DecodeException( "Variant is expected to be a ProxyArray here, but it is not." );
-			}
+            if (!(data is ProxyArray arrayData))
+            {
+                throw new DecodeException("Variant is expected to be a ProxyArray here, but it is not.");
+            }
 
-			var arraySize = arrayData.Count;
+            var arraySize = arrayData.Count;
 			var array = new T[arraySize];
 
 			var i = 0;
@@ -694,6 +776,30 @@ namespace TinyJSON
 			}
 
 			return array;
+		}
+
+
+#if ENABLE_IL2CPP
+		[Preserve]
+#endif
+		// ReSharper disable once UnusedMethodReturnValue.Local
+		static void PopulateArray<T>(ref T[] array, Variant data, Dictionary<Type, PopulateOverride> overrides = null)
+		{
+            if (!(data is ProxyArray arrayData))
+            {
+                throw new DecodeException("Variant is expected to be a ProxyArray here, but it is not.");
+            }
+
+            var arraySize = arrayData.Count;
+			array = new T[arraySize];
+
+			var i = 0;
+			foreach (var item in arrayData)
+			{
+                var value = default(T);
+                PopulateType<T>(ref value, item, overrides );
+				array[i++] = value;
+			}
 		}
 
 
@@ -719,6 +825,30 @@ namespace TinyJSON
 		}
 
 
+#if ENABLE_IL2CPP
+		[Preserve]
+#endif
+		// ReSharper disable once UnusedMember.Local
+		static void PopulateMultiRankArray<T>( ProxyArray arrayData, Array array, int arrayRank, int[] indices, Dictionary<Type, PopulateOverride> overrides = null)
+		{
+			var count = arrayData.Count;
+			for (var i = 0; i < count; i++)
+			{
+				indices[arrayRank - 1] = i;
+				if (arrayRank < array.Rank)
+				{
+                    PopulateMultiRankArray<T>( arrayData[i] as ProxyArray, array, arrayRank + 1, indices );
+				}
+				else
+				{
+					var value = default(T);
+					PopulateType(ref value, arrayData[i], overrides);
+                    array.SetValue(value , indices );
+				}
+			}
+		}
+
+
 		const BindingFlags instanceBindingFlags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
 		const BindingFlags staticBindingFlags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static;
 		static readonly MethodInfo decodeTypeMethod = typeof(JSON).GetMethod( "DecodeType", staticBindingFlags );
@@ -726,6 +856,11 @@ namespace TinyJSON
 		static readonly MethodInfo decodeDictionaryMethod = typeof(JSON).GetMethod( "DecodeDictionary", staticBindingFlags );
 		static readonly MethodInfo decodeArrayMethod = typeof(JSON).GetMethod( "DecodeArray", staticBindingFlags );
 		static readonly MethodInfo decodeMultiRankArrayMethod = typeof(JSON).GetMethod( "DecodeMultiRankArray", staticBindingFlags );
+		static readonly MethodInfo populateTypeMethod = typeof(JSON).GetMethod("PopulateType", staticBindingFlags );
+		static readonly MethodInfo populateListMethod = typeof(JSON).GetMethod("PopulateList", staticBindingFlags );
+		static readonly MethodInfo populateDictionaryMethod = typeof(JSON).GetMethod("PopulateDictionary", staticBindingFlags );
+		static readonly MethodInfo populateArrayMethod = typeof(JSON).GetMethod("PopulateArray", staticBindingFlags );
+		static readonly MethodInfo populateMultiRankArrayMethod = typeof(JSON).GetMethod("PopulateMultiRankArray", staticBindingFlags );
 
 
 #if ENABLE_IL2CPP
