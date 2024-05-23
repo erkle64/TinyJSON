@@ -4,6 +4,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Reflection;
+using UnityEngine;
 using static TinyJSON.JSON;
 
 
@@ -433,6 +434,15 @@ namespace TinyJSON
                 objectToPopulate = (T)overrideFunc(data);
                 return;
             }
+
+			if (type == typeof(Vector3Int) && data is ProxyObject vectorObject)
+			{
+				var vector = new Vector3Int();
+				vector.x = vectorObject["x"].ToInt32(CultureInfo.InvariantCulture);
+				vector.y = vectorObject["y"].ToInt32(CultureInfo.InvariantCulture);
+				vector.z = vectorObject["z"].ToInt32(CultureInfo.InvariantCulture);
+				objectToPopulate = (T)(object)vector;
+			}
 
 			if (type.IsEnum)
 			{
