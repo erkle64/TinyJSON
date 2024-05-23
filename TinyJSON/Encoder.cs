@@ -2,8 +2,10 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Numerics;
 using System.Reflection;
 using System.Text;
+using UnityEngine;
 
 
 namespace TinyJSON
@@ -318,6 +320,25 @@ namespace TinyJSON
 						firstItem = false;
 					}
 				}
+			}
+
+			if (type == typeof(Vector3Int))
+			{
+                AppendComma( firstItem );
+                EncodeString( "x" );
+                AppendColon();
+                EncodeValue( ((Vector3Int)value).x, false );
+                firstItem = false;
+                AppendComma( firstItem );
+                EncodeString( "y" );
+                AppendColon();
+                EncodeValue( ((Vector3Int)value).y, false );
+                firstItem = false;
+                AppendComma( firstItem );
+                EncodeString( "z" );
+                AppendColon();
+                EncodeValue( ((Vector3Int)value).z, false );
+                firstItem = false;
 			}
 
 			AppendCloseBrace();

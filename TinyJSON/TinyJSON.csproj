@@ -40,6 +40,9 @@
     <Reference Include="mscorlib">
       <HintPath>G:\SteamLibrary\steamapps\common\FOUNDRY\foundry_Data\Managed\mscorlib.dll</HintPath>
     </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>G:\SteamLibrary\steamapps\common\FOUNDRY\foundry_Data\Managed\UnityEngine.CoreModule.dll</HintPath>
+    </Reference>
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Properties\AssemblyInfo.cs" />
