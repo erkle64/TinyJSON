@@ -12,3 +12,4 @@ NUnit/
 packages
 /.idea
 /TinyJSON.cs
+TinyJSON/bin/Release/TinyJSON.dll
