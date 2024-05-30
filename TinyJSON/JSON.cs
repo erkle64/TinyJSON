@@ -415,7 +415,7 @@ namespace TinyJSON
 			return instance;
 		}
 
-        public delegate object PopulateOverride(Variant input);
+        public delegate object PopulateOverride(Variant input, object original);
 
 #if ENABLE_IL2CPP
 		[Preserve]
@@ -431,7 +431,7 @@ namespace TinyJSON
 
 			if (overrides.TryGetValue(type, out var overrideFunc))
             {
-                objectToPopulate = (T)overrideFunc(data);
+                objectToPopulate = (T)overrideFunc(data, objectToPopulate);
                 return;
             }
 
