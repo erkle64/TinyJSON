@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using static TinyJSON.JSON;
 
 
 namespace TinyJSON
@@ -17,9 +16,9 @@ namespace TinyJSON
 			JSON.MakeInto( this, out item );
 		}
 
-		public void Populate<T>( ref T item, Dictionary<Type, PopulateOverride> overrides)
+		public void Populate<T>( ref T item, Dictionary<Type, JSON.PopulateOverride> overrides, JSON.PopulateExpression populateExpression = null)
 		{
-			JSON.PopulateInto( this, ref item, overrides );
+			JSON.PopulateInto( this, ref item, overrides, populateExpression);
 		}
 
 

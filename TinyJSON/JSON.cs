@@ -1,11 +1,9 @@
-using Expressive;
 using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Reflection;
 using UnityEngine;
-using static TinyJSON.JSON;
 
 
 #if ENABLE_IL2CPP
@@ -154,9 +152,9 @@ namespace TinyJSON
 			item = DecodeType<T>( data );
 		}
 
-		public static void PopulateInto<T>( Variant data, ref T item, Dictionary<Type, PopulateOverride> overrides)
+		public static void PopulateInto<T>( Variant data, ref T item, Dictionary<Type, PopulateOverride> overrides, PopulateExpression populateExpression = null)
 		{
-			PopulateType(ref item, data, overrides);
+			PopulateType(ref item, data, overrides, populateExpression);
 		}
 
 
@@ -416,11 +414,12 @@ namespace TinyJSON
 		}
 
         public delegate object PopulateOverride(Variant input, object original);
+        public delegate object PopulateExpression(string source, object original);
 
 #if ENABLE_IL2CPP
 		[Preserve]
 #endif
-        static void PopulateType<T>(ref T objectToPopulate, Variant data, Dictionary<Type, PopulateOverride> overrides)
+		static void PopulateType<T>(ref T objectToPopulate, Variant data, Dictionary<Type, PopulateOverride> overrides, PopulateExpression populateExpression = null)
 		{
 			if (data == null)
 			{
@@ -457,12 +456,10 @@ namespace TinyJSON
 					var dataString = proxyString.ToString();
 					if (dataString.StartsWith("{") && dataString.EndsWith("}"))
 					{
-						var expression = new Expression(dataString.Substring(1, dataString.Length - 2), ExpressiveOptions.IgnoreCaseForParsing | ExpressiveOptions.NoCache);
-						var result = expression.Evaluate(new Dictionary<string, object>
+						if (populateExpression != null)
 						{
-                            ["value"] = objectToPopulate
-                        });
-                        objectToPopulate = (T)Convert.ChangeType(result, type);
+							objectToPopulate = (T)Convert.ChangeType(populateExpression?.Invoke(dataString.Substring(1, dataString.Length - 2), objectToPopulate), type);
+                        }
                     }
                     else
 					{

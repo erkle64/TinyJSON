@@ -58,11 +58,5 @@
     <Compile Include="JSON.cs" />
     <Compile Include="EncodeOptions.cs" />
   </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\..\expressive\Source\Expressive\Expressive.csproj">
-      <Project>{db556040-95a0-42e1-815c-81752a81f52c}</Project>
-      <Name>Expressive</Name>
-    </ProjectReference>
-  </ItemGroup>
   <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.targets" />
 </Project>

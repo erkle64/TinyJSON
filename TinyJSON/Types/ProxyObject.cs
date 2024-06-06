@@ -45,8 +45,12 @@ namespace TinyJSON
             return dict.ContainsKey( key );
 		}
 
+        public void Populate<T>(ref T instance, Dictionary<System.Type, JSON.PopulateOverride> populateOverrides, object processExpression)
+        {
+            throw new System.NotImplementedException();
+        }
 
-		public string TypeHint
+        public string TypeHint
 		{
 			get
 			{
