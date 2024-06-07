@@ -152,9 +152,14 @@ namespace TinyJSON
 			item = DecodeType<T>( data );
 		}
 
-		public static void PopulateInto<T>( Variant data, ref T item, Dictionary<Type, PopulateOverride> overrides, PopulateExpression populateExpression = null)
+		public static void PopulateInto<T>( Variant data, ref T item, Dictionary<Type, PopulateOverride> overrides)
 		{
-			PopulateType(ref item, data, overrides, populateExpression);
+			PopulateType(ref item, data, overrides);
+		}
+
+		public static void PopulateInto<T>( Variant data, ref T item, Dictionary<Type, PopulateOverride> overrides, PopulateExpression populateExpression)
+		{
+            PopulateTypeWithExpressions(ref item, data, overrides, populateExpression);
 		}
 
 
@@ -419,7 +424,15 @@ namespace TinyJSON
 #if ENABLE_IL2CPP
 		[Preserve]
 #endif
-		static void PopulateType<T>(ref T objectToPopulate, Variant data, Dictionary<Type, PopulateOverride> overrides, PopulateExpression populateExpression = null)
+		static void PopulateType<T>(ref T objectToPopulate, Variant data, Dictionary<Type, PopulateOverride> overrides)
+		{
+            PopulateTypeWithExpressions(ref objectToPopulate, data, overrides, null);
+		}
+
+#if ENABLE_IL2CPP
+		[Preserve]
+#endif
+        static void PopulateTypeWithExpressions<T>(ref T objectToPopulate, Variant data, Dictionary<Type, PopulateOverride> overrides, PopulateExpression populateExpression)
 		{
 			if (data == null)
 			{
@@ -484,7 +497,7 @@ namespace TinyJSON
 				if (type.GetArrayRank() == 1)
 				{
 					var makeFunc = populateArrayMethod.MakeGenericMethod( type.GetElementType() );
-                    var arguments = new object[] { objectToPopulate, data, overrides };
+                    var arguments = new object[] { objectToPopulate, data, overrides, populateExpression };
                     makeFunc.Invoke( null, arguments);
                     objectToPopulate = (T)arguments[0];
 					return;
@@ -509,7 +522,7 @@ namespace TinyJSON
 					var makeFunc = populateMultiRankArrayMethod.MakeGenericMethod( elementType );
 					try
 					{
-						makeFunc.Invoke( null, new object[] { arrayData, array, 1, rankLengths, overrides } );
+						makeFunc.Invoke( null, new object[] { arrayData, array, 1, rankLengths, overrides, populateExpression } );
 					}
 					catch (Exception e)
 					{
@@ -526,7 +539,7 @@ namespace TinyJSON
 			if (typeof(IList).IsAssignableFrom( type ))
 			{
 				var makeFunc = populateListMethod.MakeGenericMethod( type.GetGenericArguments() );
-                var arguments = new object[] { objectToPopulate, data, overrides };
+                var arguments = new object[] { objectToPopulate, data, overrides, populateExpression };
                 makeFunc.Invoke(null, arguments);
                 objectToPopulate = (T)arguments[0];
                 return;
@@ -535,7 +548,7 @@ namespace TinyJSON
 			if (typeof(IDictionary).IsAssignableFrom( type ))
 			{
 				var makeFunc = populateDictionaryMethod.MakeGenericMethod( type.GetGenericArguments() );
-                var arguments = new object[] { objectToPopulate, data, overrides };
+                var arguments = new object[] { objectToPopulate, data, overrides, populateExpression };
                 makeFunc.Invoke(null, arguments);
                 objectToPopulate = (T)arguments[0];
                 return;
@@ -595,7 +608,7 @@ namespace TinyJSON
 						{
 							// Type is a struct.
 							var instanceRef = (object) objectToPopulate;
-                            var arguments = new object[] { field.GetValue(instanceRef), pair.Value, overrides };
+                            var arguments = new object[] { field.GetValue(instanceRef), pair.Value, overrides, populateExpression };
                             makeFunc.Invoke(null, arguments);
                             field.SetValue( instanceRef, arguments[0]);
                             objectToPopulate = (T) instanceRef;
@@ -603,7 +616,7 @@ namespace TinyJSON
 						else
 						{
 							// Type is a class.
-                            var arguments = new object[] { field.GetValue(objectToPopulate), pair.Value, overrides };
+                            var arguments = new object[] { field.GetValue(objectToPopulate), pair.Value, overrides, populateExpression };
                             makeFunc.Invoke(null, arguments);
                             field.SetValue(objectToPopulate, arguments[0]);
                         }
@@ -636,12 +649,12 @@ namespace TinyJSON
 				{
 					if (property.CanWrite && property.GetCustomAttributes( false ).AnyOfType( includeAttrType ))
 					{
-						var makeFunc = decodeTypeMethod.MakeGenericMethod( new Type[] { property.PropertyType } );
+						var makeFunc = populateTypeMethod.MakeGenericMethod( new Type[] { property.PropertyType } );
 						if (type.IsValueType)
 						{
 							// Type is a struct.
 							var instanceRef = (object)objectToPopulate;
-                            var arguments = new object[] { property.GetValue(instanceRef, null), pair.Value, overrides };
+                            var arguments = new object[] { property.GetValue(instanceRef, null), pair.Value, overrides, populateExpression };
                             makeFunc.Invoke(null, arguments);
                             property.SetValue( instanceRef, arguments[0], null );
                             objectToPopulate = (T) instanceRef;
@@ -649,7 +662,7 @@ namespace TinyJSON
 						else
 						{
                             // Type is a class.
-                            var arguments = new object[] { property.GetValue(objectToPopulate, null), pair.Value, overrides };
+                            var arguments = new object[] { property.GetValue(objectToPopulate, null), pair.Value, overrides, populateExpression };
                             makeFunc.Invoke(null, arguments);
                             property.SetValue(objectToPopulate, arguments[0], null );
 						}
@@ -694,7 +707,7 @@ namespace TinyJSON
 		[Preserve]
 #endif
 		// ReSharper disable once UnusedMethodReturnValue.Local
-		static void PopulateList<T>(ref List<T> list, Variant data, Dictionary<Type, PopulateOverride> overrides = null)
+		static void PopulateList<T>(ref List<T> list, Variant data, Dictionary<Type, PopulateOverride> overrides, PopulateExpression populateExpression)
 		{
 			if (list == null) list = new List<T>();
 			else list.Clear();
@@ -706,7 +719,7 @@ namespace TinyJSON
             foreach (var item in proxyArray)
 			{
 				T value = default(T);
-                PopulateType(ref value, item, overrides);
+                PopulateTypeWithExpressions(ref value, item, overrides, populateExpression);
                 list.Add(value);
 			}
 		}
@@ -741,7 +754,7 @@ namespace TinyJSON
 		[Preserve]
 #endif
 		// ReSharper disable once UnusedMethodReturnValue.Local
-		static void PopulateDictionary<TKey, TValue>(ref Dictionary<TKey, TValue> dict, Variant data, Dictionary<Type, PopulateOverride> overrides = null)
+		static void PopulateDictionary<TKey, TValue>(ref Dictionary<TKey, TValue> dict, Variant data, Dictionary<Type, PopulateOverride> overrides, PopulateExpression populateExpression)
 		{
 			if (dict == null) dict = new Dictionary<TKey, TValue>();
 			else dict.Clear();
@@ -756,7 +769,7 @@ namespace TinyJSON
 			{
 				var k = (TKey) (type.IsEnum ? Enum.Parse( type, pair.Key ) : Convert.ChangeType( pair.Key, type ));
 				var v = default(TValue);
-                PopulateType(ref v, pair.Value, overrides );
+                PopulateTypeWithExpressions(ref v, pair.Value, overrides, populateExpression);
 				dict[k] = v;
 			}
 		}
@@ -790,7 +803,7 @@ namespace TinyJSON
 		[Preserve]
 #endif
 		// ReSharper disable once UnusedMethodReturnValue.Local
-		static void PopulateArray<T>(ref T[] array, Variant data, Dictionary<Type, PopulateOverride> overrides = null)
+		static void PopulateArray<T>(ref T[] array, Variant data, Dictionary<Type, PopulateOverride> overrides, PopulateExpression populateExpression)
 		{
             if (!(data is ProxyArray arrayData))
             {
@@ -804,7 +817,7 @@ namespace TinyJSON
 			foreach (var item in arrayData)
 			{
                 var value = default(T);
-                PopulateType<T>(ref value, item, overrides );
+                PopulateTypeWithExpressions(ref value, item, overrides, populateExpression);
 				array[i++] = value;
 			}
 		}
@@ -836,7 +849,7 @@ namespace TinyJSON
 		[Preserve]
 #endif
 		// ReSharper disable once UnusedMember.Local
-		static void PopulateMultiRankArray<T>( ProxyArray arrayData, Array array, int arrayRank, int[] indices, Dictionary<Type, PopulateOverride> overrides = null)
+		static void PopulateMultiRankArray<T>( ProxyArray arrayData, Array array, int arrayRank, int[] indices, Dictionary<Type, PopulateOverride> overrides, PopulateExpression populateExpression)
 		{
 			var count = arrayData.Count;
 			for (var i = 0; i < count; i++)
@@ -844,12 +857,12 @@ namespace TinyJSON
 				indices[arrayRank - 1] = i;
 				if (arrayRank < array.Rank)
 				{
-                    PopulateMultiRankArray<T>( arrayData[i] as ProxyArray, array, arrayRank + 1, indices );
+                    PopulateMultiRankArray<T>( arrayData[i] as ProxyArray, array, arrayRank + 1, indices, overrides, populateExpression );
 				}
 				else
 				{
 					var value = default(T);
-					PopulateType(ref value, arrayData[i], overrides);
+					PopulateTypeWithExpressions(ref value, arrayData[i], overrides, populateExpression);
                     array.SetValue(value , indices );
 				}
 			}
@@ -863,7 +876,7 @@ namespace TinyJSON
 		static readonly MethodInfo decodeDictionaryMethod = typeof(JSON).GetMethod( "DecodeDictionary", staticBindingFlags );
 		static readonly MethodInfo decodeArrayMethod = typeof(JSON).GetMethod( "DecodeArray", staticBindingFlags );
 		static readonly MethodInfo decodeMultiRankArrayMethod = typeof(JSON).GetMethod( "DecodeMultiRankArray", staticBindingFlags );
-		static readonly MethodInfo populateTypeMethod = typeof(JSON).GetMethod("PopulateType", staticBindingFlags );
+		static readonly MethodInfo populateTypeMethod = typeof(JSON).GetMethod("PopulateTypeWithExpressions", staticBindingFlags );
 		static readonly MethodInfo populateListMethod = typeof(JSON).GetMethod("PopulateList", staticBindingFlags );
 		static readonly MethodInfo populateDictionaryMethod = typeof(JSON).GetMethod("PopulateDictionary", staticBindingFlags );
 		static readonly MethodInfo populateArrayMethod = typeof(JSON).GetMethod("PopulateArray", staticBindingFlags );

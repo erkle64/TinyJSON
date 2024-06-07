@@ -266,14 +266,49 @@ namespace TinyJSON
 			return new ProxyNumber( NextWord );
 		}
 
+		void ConsumeComment()
+		{
+			if (json.Peek() != '/') return;
+            json.Read();
+			if (json.Peek() == '/')
+			{
+				json.Read();
+				while (json.Peek() != -1 && json.Peek() != '\n')
+				{
+					json.Read();
+				}
+			}
+            else if (json.Peek() == '*')
+            {
+                json.Read();
+                while (json.Peek() != -1)
+                {
+					if (json.Peek() == '*')
+					{
+						json.Read();
+
+						if (json.Peek() == '/')
+						{
+							json.Read();
+							break;
+						}
+					}
+
+                    json.Read();
+                }
+            }
+		}
 
 		void ConsumeWhiteSpace()
 		{
+			ConsumeComment();
+
 			while (whiteSpace.IndexOf( PeekChar ) != -1)
 			{
 				json.Read();
+                ConsumeComment();
 
-				if (json.Peek() == -1)
+                if (json.Peek() == -1)
 				{
 					break;
 				}

@@ -16,7 +16,12 @@ namespace TinyJSON
 			JSON.MakeInto( this, out item );
 		}
 
-		public void Populate<T>( ref T item, Dictionary<Type, JSON.PopulateOverride> overrides, JSON.PopulateExpression populateExpression = null)
+		public void Populate<T>( ref T item, Dictionary<Type, JSON.PopulateOverride> overrides)
+		{
+			JSON.PopulateInto( this, ref item, overrides, null);
+		}
+
+		public void Populate<T>( ref T item, Dictionary<Type, JSON.PopulateOverride> overrides, JSON.PopulateExpression populateExpression)
 		{
 			JSON.PopulateInto( this, ref item, overrides, populateExpression);
 		}
