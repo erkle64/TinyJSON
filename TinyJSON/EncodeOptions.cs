@@ -11,8 +11,6 @@ namespace TinyJSON
 		NoTypeHints = 2,
 		IncludePublicProperties = 4,
 		EnforceHierarchyOrder = 8,
-
-		[Obsolete( "Use EncodeOptions.EnforceHierarchyOrder instead." )]
-		EnforceHeirarchyOrder = EnforceHierarchyOrder
+		DropNulls = 16
 	}
 }

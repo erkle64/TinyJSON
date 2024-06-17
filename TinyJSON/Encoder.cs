@@ -2,7 +2,6 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
-using System.Numerics;
 using System.Reflection;
 using System.Text;
 using UnityEngine;
@@ -10,7 +9,7 @@ using UnityEngine;
 
 namespace TinyJSON
 {
-	public sealed class Encoder
+    public sealed class Encoder
 	{
 		static readonly Type includeAttrType = typeof(Include);
 		static readonly Type excludeAttrType = typeof(Exclude);
@@ -76,6 +75,15 @@ namespace TinyJSON
 			get
 			{
 				return (options & EncodeOptions.EnforceHierarchyOrder) == EncodeOptions.EnforceHierarchyOrder;
+			}
+		}
+
+
+		bool DropNullsEnabled
+		{
+			get
+			{
+				return (options & EncodeOptions.DropNulls) == EncodeOptions.DropNulls;
 			}
 		}
 
@@ -276,7 +284,9 @@ namespace TinyJSON
 					}
 				}
 
-				if (shouldEncode)
+				if (shouldEncode && DropNullsEnabled && field.GetValue(value) == null) shouldEncode = false;
+
+                if (shouldEncode)
 				{
 					AppendComma( firstItem );
 					EncodeString( field.Name );
