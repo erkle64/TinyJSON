@@ -817,6 +817,7 @@ namespace TinyJSON
 			foreach (var item in arrayData)
 			{
                 var value = default(T);
+				if (typeof(T).IsClass && typeof(T).GetConstructor(Type.EmptyTypes) != null) value = Activator.CreateInstance<T>();
                 PopulateTypeWithExpressions(ref value, item, overrides, populateExpression);
 				array[i++] = value;
 			}
